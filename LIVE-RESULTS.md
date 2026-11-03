@@ -7,3 +7,9 @@ The final score-maximization change has targeted regression coverage. A complete
 The synchronized turn adapter remains unchanged. Its contract tests check original-step order, exactly one original step, restoration, and exception handling. Strategy tests cover the actual delayed-growth and tail collision rules.
 
 An earlier eight-seed approximate simulation comparison averaged 58.875 apples without a growth margin versus 61.75 with it. That comparison predates the final endgame and scoring revisions and does not establish their win rate. The bundled five-seed smoke simulation also uses approximate wall placement; it checks legality rather than reproducing all Google randomness.
+
+## 2.2.0 experiment
+
+The user subsequently reported repeated 69-apple runs with the 2.1.1 baseline. The baseline is preserved as the GitHub v2.1.1 release. Version 2.2.0 changes search budget allocation, saturated-cache recovery, and incremental frontier work. The synchronized engine adapter is byte-for-byte unchanged. Targeted tests and live trial results must be distinguished from evidence of a higher win rate.
+
+First 2.2.0 live trial: small 10×9 board, Walls, many apples, fast speed (89.10 ms engine interval). It collected 66 apples over 177 steps, then had no legal move after switching to score maximization. Diagnostics recorded 14 endgame policy decisions, a maximum cache size of 2,043 states, no capacity rebuild in that attempt, and a maximum planner time of 14.1 ms. No engine/body mismatch was reported. This single result does not demonstrate improvement over the user's repeated 69-apple baseline runs.

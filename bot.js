@@ -5,12 +5,12 @@
   const host=document.createElement('div');host.id='snake-bot-panel';host.style.cssText='position:fixed;right:16px;top:16px;z-index:2147483647';
   const ui=host.attachShadow({mode:'open'});
   ui.innerHTML=`<style>:host{font:14px system-ui;color:#eaf2ff}section{width:280px;padding:16px;background:#142033;border:1px solid #496080;border-radius:14px;box-shadow:0 8px 32px #0005}h2{font-size:17px;margin:0 0 10px}p{font-size:12px;line-height:1.5;color:#bdcce0}button{font:inherit;padding:8px;border-radius:7px;border:0;margin:3px 3px 3px 0;cursor:pointer;background:#9ce26c;color:#142033}button.stop{background:#f6bb87}button.close{float:right;background:none;color:white;padding:0}output{display:block;white-space:pre-wrap;font-size:12px;line-height:1.5;margin-top:12px}</style>
-<section><button class="close">×</button><h2>Snake Bot 2.1.1 · strategy</h2><p>Choose Walls and multiple apples, then click the game’s Play. Start on a fresh board. Keep this tab visible.</p><label style="display:block;font-size:12px;margin:10px 0"><input class="retry" type="checkbox"> Auto-run · retry until a win</label><button class="start">Start bot</button><button class="stop">Stop & menu</button><button class="report">Save diagnostics</button><output>Ready · existing synchronized turns</output></section>`;
+<section><button class="close">×</button><h2>Snake Bot 2.2.0 · strategy</h2><p>Choose Walls and multiple apples, then click the game’s Play. Start on a fresh board. Keep this tab visible.</p><label style="display:block;font-size:12px;margin:10px 0"><input class="retry" type="checkbox"> Auto-run · retry until a win</label><button class="start">Start bot</button><button class="stop">Stop & menu</button><button class="report">Save diagnostics</button><output>Ready · existing synchronized turns</output></section>`;
   document.documentElement.append(host);
   const gameCanvas=[...document.querySelectorAll('canvas')].sort((a,b)=>b.width*b.height-a.width*a.height)[0];
   if(gameCanvas){const r=gameCanvas.getBoundingClientRect();if(innerWidth-r.right<330&&r.left>330){host.style.left='12px';host.style.right='auto';}}
   const status=ui.querySelector('output');
-  let engine=null,detach=null,running=false,pendingInitial=null,expected=null,visits={},lastScore=0,steps=0,maxPlanMs=0,lastPlanMs=0,lastMode='',result='ready',route=[],routeSignature='',lastDepth=0;
+  let engine=null,detach=null,running=false,pendingInitial=null,expected=null,visits={},lastScore=0,steps=0,maxPlanMs=0,lastPlanMs=0,lastMode='',result='ready',route=[],routeSignature='',lastDepth=0,lastSearch=null;
   let retryTimer=null,attempt=0;
   const history=[];
   const worldSignature=s=>s.apples.map(P.key).sort().join(';')+'|'+s.walls.map(P.key).sort().join(';');
@@ -20,7 +20,7 @@
   function render(s){
     const completed=history.filter(h=>['win','loss','unwinnable'].includes(h.kind));
     const best=Math.max(s.score,0,...history.map(h=>h.score)),average=completed.length?(completed.reduce((sum,h)=>sum+h.score,0)/completed.length).toFixed(1):'—';
-    status.textContent=`${result}\nAttempt ${attempt} · ${s.score} apples · ${steps} steps\nBest ${best} · average ${average} · wins ${completed.filter(h=>h.kind==='win').length}\n${completed.length} finished · ${completed.filter(h=>h.kind==='unwinnable').length} unwinnable\n${s.width} × ${s.height} · ${s.body.length} body cells · ${s.walls.length} walls\n${lastMode} · depth ${lastDepth}\nPlan ${lastPlanMs.toFixed(1)} ms · max ${maxPlanMs.toFixed(1)} ms\nEngine interval ${s.tickMs.toFixed(2)} ms`;
+    status.textContent=`${result}\nAttempt ${attempt} · ${s.score} apples · ${steps} steps\nBest ${best} · average ${average} · wins ${completed.filter(h=>h.kind==='win').length}\n${completed.length} finished · ${completed.filter(h=>h.kind==='unwinnable').length} unwinnable\n${s.width} × ${s.height} · ${s.body.length} body cells · ${s.walls.length} walls\n${lastMode} · depth ${lastDepth}${lastSearch?`\nEndgame +${lastSearch.expanded} states · cache ${lastSearch.cacheSize} · frontier ${lastSearch.frontier}${lastSearch.recovered?' · rebuilt':''}`:''}\nPlan ${lastPlanMs.toFixed(1)} ms · max ${maxPlanMs.toFixed(1)} ms\nEngine interval ${s.tickMs.toFixed(2)} ms`;
     // Visible diagnostic state is useful for automated UI checks and debugging.
     host.dataset.result=result;host.dataset.score=String(s.score);host.dataset.steps=String(steps);
   }
@@ -39,7 +39,7 @@
     },1700);
   }
   function choose(s){
-    const start=performance.now(),choice=P.plan({...s,visits});lastPlanMs=performance.now()-start;maxPlanMs=Math.max(maxPlanMs,lastPlanMs);lastMode=choice.mode;lastDepth=choice.depth||0;
+    const start=performance.now(),choice=P.plan({...s,visits});lastPlanMs=performance.now()-start;maxPlanMs=Math.max(maxPlanMs,lastPlanMs);lastMode=choice.mode;lastDepth=choice.depth||0;lastSearch=choice.search||null;
     record('plan',{state:s,choice,ms:lastPlanMs});return choice;
   }
   const ended=s=>{record('ended',{state:s});return s.won?'WIN · apples cleared':s.paused?'Paused or ended by game control':`Game over · ${s.score} apples`;};
@@ -96,7 +96,7 @@
   ui.querySelector('.close').onclick=()=>{stop('Closed',running);host.remove();};
   ui.querySelector('.report').onclick=()=>{
     let state=null;try{state=E.snapshot(engine);}catch(_){}
-    const url=URL.createObjectURL(new Blob([JSON.stringify({version:P.version||'2.1.1',result,steps,attempt,history,maxPlanMs,state,trace},null,2)],{type:'application/json'}));
+    const url=URL.createObjectURL(new Blob([JSON.stringify({version:P.version||'2.2.0',result,steps,attempt,history,maxPlanMs,state,trace},null,2)],{type:'application/json'}));
     const a=document.createElement('a');a.href=url;a.download='snake-bot-v2-diagnostics.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   };
 })();

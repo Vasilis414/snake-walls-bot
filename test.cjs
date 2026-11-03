@@ -126,6 +126,56 @@ for(const spawn of [[2,2],[3,2]]){
   const after={...twoHoles,...next,score:5,apples:[...twoHoles.apples.filter(p=>!P.same(p,policy.next)),spawn]};
   const solution=P.finish(after,performance.now()+100);assert(solution);replayForced(after,solution.route);
 }
+// Exercise the real plan() phase scheduling while simulating finish() using
+// its entire allowance. The following policy phase must still have time.
+let phaseClock=0;const phaseEntries=[];
+const timedSandbox={module:{exports:{}},performance:{now:()=>phaseClock},
+  consumeFinish:deadline=>{phaseClock=deadline;},
+  enterPolicy:deadline=>phaseEntries.push({now:phaseClock,deadline})};
+const timedSource=fs.readFileSync(__dirname+'/planner.js','utf8')
+  .replace('function finish(b,deadline){',
+    'function finish(b,deadline){const result=realFinish(b,deadline);consumeFinish(deadline);return result;} function realFinish(b,deadline){')
+  .replace('function endgame(b,deadline,scoring=false){',
+    'function endgame(b,deadline,scoring=false){enterPolicy(deadline);');
+vm.runInNewContext(timedSource,timedSandbox);
+const timedChoice=timedSandbox.module.exports.plan({...twoHoles,budgetMs:14});
+assert(phaseEntries[0].deadline>phaseEntries[0].now,'reserve policy time even when finish exhausts its budget');
+assert(timedChoice.search.expanded>0,'the subsequent policy actually performs useful work');
+assert.equal(timedChoice.winLowerBound,1);
+
+// A tiny expansion quota makes incremental frontier behavior deterministic,
+// independent of CPU speed. Repeated calls must advance, not restart traversal.
+P.reset();let previousSize=0;
+for(let i=0;i<5;i++){
+  P.endgame({...twoHoles,endgameExpansionLimit:1},performance.now()+100);
+  const stats=P.endgameStats();
+  assert.equal(stats.expanded,1,'use the retained frontier to expand one new state');
+  assert(stats.cacheSize>previousSize,'new search work must accumulate across calls');
+  assert.equal(stats.sameRoot,i>0);
+  if(i>0)assert(stats.discovered<=3,'do not rediscover the entire cached graph on an unchanged board');
+  previousSize=stats.cacheSize;
+}
+// Simulate saturation cheaply. Recovery must create a usable new graph, not
+// leave the attempt unable to allocate states. No partial chance action may
+// be committed as if its missing outcomes had a permanent value of zero.
+P.reset();
+P.endgame({...twoHoles,endgameNodeLimit:8},performance.now()+100);
+assert(P.endgameStats().saturated);
+P.endgame({...twoHoles,endgameNodeLimit:8},performance.now()+100);
+assert(P.endgameStats().recovered,'rebuild saturated caches instead of remaining disabled');
+assert(P.endgameStats().expanded>0);
+assert(P.endgameStats().cacheSize<=8);
+// Re-root the cached graph to an actual successor and recover the same proven
+// finish, with no work spent backing up unreachable previous chance branches.
+P.reset();P.endgame(twoHoles,performance.now()+100);
+const moved=P.step(twoHoles,[0,2],new Set(twoHoles.apples.map(P.key)));
+const reroot={...twoHoles,...moved,score:5,apples:[...twoHoles.apples.filter(p=>!P.same(p,[0,2])),[2,2]]};
+const rerootPolicy=P.endgame(reroot,performance.now()+100);
+assert.equal(rerootPolicy.value,1);
+assert.equal(P.endgameStats().sameRoot,false);
+assert(P.legal(reroot.body,rerootPolicy.next,new Set(reroot.apples.map(P.key)),new Set(),reroot.growth));
+P.reset();
+
 const serpentine=[];for(let y=0;y<5;y++)for(let j=0;j<5;j++)serpentine.push([y%2?4-j:j,y]);
 const wallEnding={width:5,height:5,mode:1,score:0,growth:0,body:serpentine.slice(0,22).reverse(),apples:serpentine.slice(22),walls:[]};
 const wallFinish=P.finish(wallEnding,performance.now()+100);assert(wallFinish);
@@ -182,5 +232,5 @@ function simulate(seed){
   return {seed,score,result:'step limit'};
 }
 const results=process.argv.includes('--unit')?[]:[1,2,3,4,5].map(simulate);if(results.length)assert(results.some(r=>r.score>=10));
-console.log('Passed: delayed growth, pending-tail collision, traps, exact-head state, tick order, tick restoration, planner error handling, full-route escape witnesses, recorded trap detour, exact endgame finishes, both fruit-spawn outcomes, and maximum-score unwinnable endgames.');
+console.log('Passed: delayed growth, pending-tail collision, traps, exact-head state, tick order, tick restoration, planner error handling, full-route escape witnesses, recorded trap detour, exact endgame finishes, both fruit-spawn outcomes, and maximum-score unwinnable endgames, incremental frontier reuse, cache-cap recovery, and actual-state re-rooting.');
 console.log(JSON.stringify(results,null,2));
