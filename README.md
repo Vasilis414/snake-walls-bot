@@ -1,10 +1,14 @@
-# Snake Bot 2.2.0 — endgame search experiment
+# Snake Bot 2.2.1 — endgame search experiment
 
 This update keeps the working engine-synchronized turning mechanism. The changes are in route selection, escape planning, and strategy-related route caching.
 
+## Google compatibility update — 5 November 2026
+
+Version 2.2.1 supports both verified Google engine layouts. The newer build renamed the snake, fruit, wall, pending-growth, score, interval, pause and win fields. The adapter now selects a complete verified layout and the fresh-board check uses normalized state. The tick wrapper, normal turn method and strategy are unchanged. The old generic “click Play first” error also explains that an already-visible board can indicate an unsupported build.
+
 ## Baseline and experiment
 
-The working baseline is preserved on GitHub as tag/release `v2.1.1` and on `main`. This experiment is developed on `experiment/endgame-search`. The user reports repeated 69-apple baseline runs; their final states have not been analyzed.
+The original baseline is preserved as tag/release `v2.1.1`. Version `v2.1.2` on `main` retains that strategy and adds compatibility with the current Google build. This experiment is developed on `experiment/endgame-search`. The user reports repeated 69-apple baseline runs; their final states have not been analyzed.
 
 Version 2.2.0 keeps the 14 ms planning budget and the exact same turn/tick adapter. Deterministic finishing receives the first 25% of the budget; probabilistic endgame search can run until 70%, leaving the rest for the beam fallback. Search frontiers persist for unchanged states, cached descendants are discovered incrementally after re-rooting, and backup queues deduplicate pending work and share time with expansion. A saturated cache rebuilds from the actual current board. Partial expansions never commit missing chance outcomes. The panel and diagnostics expose expansions, cache size, frontier size, and cache rebuilds.
 
@@ -45,7 +49,7 @@ The bot submits turns immediately before Google's original movement step. The or
 
 The extension retains `activeTab` and `scripting` permissions, activates only when its icon is clicked on a supported Google URL, and uses bundled scripts in the page's MAIN execution world. It makes no network requests, adds no debugger permissions, and stores no telemetry.
 
-The adapter matches the Google Snake version inspected on 2026-11-03. A future Google update can require an adapter change. Unknown engine structures stop rather than fall back to a guessed clock.
+The adapter supports the Google Snake layouts inspected on 2026-11-03 and 2026-11-05. A future Google update can require an adapter change. Unknown engine structures stop rather than fall back to a guessed clock.
 
 ## Verification
 
