@@ -109,46 +109,69 @@
     const path=visit({body,growth:b.growth||0,fruit,wall,walls:wallIds,score:b.score||0},0);
     return path?{route:path.map(point),nodes}:null;
   }
-  const endGraph=new Map(),endDirty=[];
+  let endSession=null,endLastStats=null;
+  function resetSearch(){endSession=null;endLastStats=null;}
   function endgame(b,deadline,scoring=false){
     const W=b.width,H=b.height,N=W*H,id=p=>p[1]*W+p[0],point=i=>[i%W,Math.floor(i/W)];
     const initialBody=b.body.map(id),initialWalls=b.walls.map(id);
     const empty=N-new Set(initialBody).size-initialWalls.length-b.apples.length;
+    endLastStats=null;
     if(empty>8||N>120)return null;
-    const bits=Array.from({length:N},(_,i)=>1n<<BigInt(i));
-    const adj=Array.from({length:N},(_,i)=>neighbors(point(i),b).map(id));
-    let initialFruit=0n,initialWall=0n;for(const p of b.apples)initialFruit|=bits[id(p)];for(const p of initialWalls)initialWall|=bits[p];
-    const prefix=W+'x'+H+'/'+b.mode+'/',propagate=endDirty;
-    let expanded=0,created=0;
-    function get(state){
-      const key=prefix+state.body.length+':'+String.fromCharCode(...state.body)+'/'+state.growth+'/'+state.fruit+'/'+state.wall+'/'+(state.score%2);
-      if(endGraph.has(key))return endGraph.get(key);
-      if(endGraph.size>=50000)return null;
-      let f=state.fruit,count=0;while(f){f&=f-1n;count++;}
-      const node={...state,body:Uint8Array.from(state.body),key,count,value:state.fruit?0:1,best:null,scoreValue:0,scoreDistance:Infinity,bestScore:null,actions:state.fruit?null:[],parents:new Set()};
-      endGraph.set(key,node);created++;return node;
+    const prefix=W+'x'+H+'/'+b.mode+'/',limit=Math.max(8,b.endgameNodeLimit??50000);
+    let recovered=false;
+    // A full cache is rebuilt from the actual current board, never left inert
+    // for the rest of the attempt. No actions retain permanently null children.
+    if(!endSession||endSession.prefix!==prefix||endSession.limit!==limit||endSession.saturated){
+      recovered=!!endSession?.saturated;
+      endSession={prefix,limit,graph:new Map(),heap:[],discovery:[],cursor:0,
+        dirty:[],dirtySet:new Set(),rootKey:null,epoch:0,saturated:false,
+        bits:Array.from({length:N},(_,i)=>1n<<BigInt(i)),
+        adj:Array.from({length:N},(_,i)=>neighbors(point(i),b).map(id))};
     }
-    function eligible(p,head,ws){
-      const [x,y]=point(p),[hx,hy]=point(head);
-      if(Math.abs(x-hx)+Math.abs(y-hy)<=3)return false;
-      if((x===0||x===W-1)&&(y===1||y===H-2)||(y===0||y===H-1)&&(x===1||x===W-2))return false;
-      for(const w of ws){const [a,c]=point(w);
-        if(Math.max(Math.abs(x-a),Math.abs(y-c))<=1)return false;
-        if(x===a&&(x===0||x===W-1)&&Math.abs(y-c)<=2)return false;
-        if(y===c&&(y===0||y===H-1)&&Math.abs(x-a)<=2)return false;
-        for(const [u,v]of [[0,0],[W-1,0],[0,H-1],[W-1,H-1]])if(Math.abs(a-u)+Math.abs(c-v)===2&&Math.abs(x-u)+Math.abs(y-v)===2&&(a===u||c===v)&&(x===u||y===v))return false;
+    const session=endSession,{graph,bits,adj}=session;
+    let expanded=0,created=0,reused=0,discovered=0,backups=0;
+    const stateKey=state=>prefix+state.body.length+':'+String.fromCharCode(...state.body)+'/'+state.growth+'/'+state.fruit+'/'+state.wall+'/'+(state.score%2);
+    function get(state){
+      const key=stateKey(state);
+      if(graph.has(key)){reused++;return graph.get(key);}
+      if(graph.size>=limit){session.saturated=true;return null;}
+      let f=state.fruit,count=0;while(f){f&=f-1n;count++;}
+      const node={...state,body:Uint8Array.from(state.body),key,count,value:state.fruit?0:1,
+        best:null,scoreValue:0,scoreDistance:Infinity,bestScore:null,
+        actions:state.fruit?null:[],parents:new Set(),epoch:0};
+      graph.set(key,node);created++;return node;
+    }
+    const priority=n=>n.count*1000-(n.body.length+n.walls.length)*4;
+    function push(n){
+      const heap=session.heap;let i=heap.length;heap.push(n);
+      while(i){const p=(i-1)>>1;if(priority(heap[p])<=priority(n))break;heap[i]=heap[p];i=p;}heap[i]=n;
+    }
+    function pop(){
+      const heap=session.heap,first=heap[0],last=heap.pop();
+      if(heap.length){let i=0;for(;;){let c=i*2+1;if(c>=heap.length)break;if(c+1<heap.length&&priority(heap[c+1])<priority(heap[c]))c++;if(priority(last)<=priority(heap[c]))break;heap[i]=heap[c];i=c;}heap[i]=last;}
+      return first;
+    }
+    function enqueue(n){
+      if(n.epoch===session.epoch&&!session.dirtySet.has(n)){
+        session.dirtySet.add(n);session.dirty.push(n);
       }
-      return true;
+    }
+    function discover(n){
+      if(n.epoch===session.epoch)return;
+      n.epoch=session.epoch;discovered++;
+      if(n.actions===null)push(n);
+      else {session.discovery.push(n);enqueue(n);}
     }
     function backup(n){
+      backups++;
       if(!n.actions?.length)return;
       let best=n.value,move=n.best,score=n.scoreValue,distance=n.scoreDistance,scoreMove=n.bestScore;
       for(const action of n.actions){
         let value=0,reward=action.reward,travel=action.reward?0:1;
         for(const outcome of action.outcomes){
-          value+=(outcome.child?.value||0)*outcome.weight;
-          reward+=(outcome.child?.scoreValue||0)*outcome.weight;
-          if(!action.reward)travel+=(outcome.child?.scoreDistance??Infinity)*outcome.weight;
+          value+=outcome.child.value*outcome.weight;
+          reward+=outcome.child.scoreValue*outcome.weight;
+          if(!action.reward)travel+=outcome.child.scoreDistance*outcome.weight;
         }
         if(value>best+1e-12){best=value;move=action.next;}
         if(reward>score+1e-9||(Math.abs(reward-score)<=1e-9&&travel<distance-1e-9)){
@@ -157,64 +180,91 @@
       }
       const changed=best>n.value+1e-12||score>n.scoreValue+1e-9||distance<n.scoreDistance-1e-9;
       n.value=Math.min(1,best);n.best=move;n.scoreValue=score;n.scoreDistance=distance;n.bestScore=scoreMove;
-      if(changed)for(const parent of n.parents)propagate.push(parent);
+      if(changed)for(const parent of n.parents)enqueue(parent);
+    }
+    function drain(max){
+      for(let i=0;i<max&&session.dirty.length&&performance.now()<deadline;i++){
+        const n=session.dirty.pop();session.dirtySet.delete(n);backup(n);
+      }
     }
     function expand(n){
-      if(n.actions!==null)return;
-      expanded++;n.actions=[];
+      const actions=[];
       for(const q of adj[n.body[0]]){
         if(n.wall&bits[q]||q===n.body[1]||n.body.indexOf(q,1)>=0&&n.body.indexOf(q,1)<n.body.length-1)continue;
         const ate=!!(n.fruit&bits[q]),body=[q,...(n.growth>0?n.body:n.body.slice(0,-1))],fruit=ate?n.fruit&~bits[q]:n.fruit,score=n.score+(ate?1:0);
         const occupied=new Set(body),holes=[];
         if(ate)for(let cell=0;cell<N;cell++)if(!occupied.has(cell)&&!(fruit&bits[cell])&&!(n.wall&bits[cell]))holes.push(cell);
-        const options=ate&&b.mode===1&&score%2===1?holes.filter(p=>eligible(p,q,n.walls)):[];
+        const options=ate&&b.mode===1&&score%2===1?holes.filter(p=>wallAllowed(p,q,n.walls,W,H)):[];
         const wallChoices=options.length?options:[null],outcomes=[];
         for(const wall of wallChoices){
           const rest=holes.filter(p=>p!==wall),fruitChoices=ate&&rest.length?rest:[null];
           for(const food of fruitChoices){
             const child=get({body,growth:Math.max(0,n.growth-1)+(ate?1:0),fruit:food===null?fruit:fruit|bits[food],wall:wall===null?n.wall:n.wall|bits[wall],walls:wall===null?n.walls:[...n.walls,wall],score});
-            if(child)child.parents.add(n);
+            // Commit an expansion only when every chance outcome is present.
+            // An interrupted expansion remains unresolved and can be rebuilt.
+            if(!child)return false;
             outcomes.push({child,weight:1/(wallChoices.length*fruitChoices.length)});
           }
         }
-        n.actions.push({next:q,reward:ate?1:0,outcomes});
+        actions.push({next:q,reward:ate?1:0,outcomes});
       }
-      backup(n);
+      n.actions=actions;expanded++;
+      for(const action of actions)for(const outcome of action.outcomes){
+        outcome.child.parents.add(n);discover(outcome.child);
+      }
+      backup(n);return true;
     }
-    // Explore a state graph, not a recursive tree. Tail-following cycles do not
-    // consume the entire search budget, and discovered winning continuations
-    // propagate back through both player actions and random spawn outcomes.
-    const rootNode=get({body:initialBody,growth:b.growth||0,fruit:initialFruit,wall:initialWall,walls:initialWalls,score:b.score||0});
-    if(!rootNode)return null;
-    while(propagate.length&&performance.now()<deadline)backup(propagate.pop());
-    const heap=[],seen=new Set();
-    const priority=n=>n.count*1000-(n.body.length+n.walls.length)*4;
-    function push(n){if(!n||seen.has(n.key)||!n.fruit)return;seen.add(n.key);let i=heap.length;heap.push(n);while(i){const p=(i-1)>>1;if(priority(heap[p])<=priority(n))break;heap[i]=heap[p];i=p;}heap[i]=n;}
-    function pop(){const first=heap[0],last=heap.pop();if(heap.length){let i=0;for(;;){let c=i*2+1;if(c>=heap.length)break;if(c+1<heap.length&&priority(heap[c+1])<priority(heap[c]))c++;if(priority(last)<=priority(heap[c]))break;heap[i]=heap[c];i=c;}heap[i]=last;}return first;}
-    push(rootNode);
-    while(heap.length&&performance.now()<deadline&&(scoring||rootNode.value<1-1e-9)){
-      const n=pop();expand(n);
-      for(const action of n.actions||[])for(const outcome of action.outcomes)push(outcome.child);
-      while(propagate.length&&performance.now()<deadline)backup(propagate.pop());
+    let initialFruit=0n,initialWall=0n;
+    for(const p of b.apples)initialFruit|=bits[id(p)];for(const p of initialWalls)initialWall|=bits[p];
+    const state={body:initialBody,growth:b.growth||0,fruit:initialFruit,wall:initialWall,walls:initialWalls,score:b.score||0};
+    // Reserve a slot for a new actual root even if the preceding call ended
+    // exactly at capacity without trying to allocate another successor.
+    if(graph.size>=limit&&!graph.has(stateKey(state))){session.saturated=true;return endgame(b,deadline,scoring);}
+    const rootNode=get(state),sameRoot=session.rootKey===rootNode.key;
+    if(!sameRoot){
+      session.rootKey=rootNode.key;session.epoch++;
+      session.heap=[];session.discovery=[];session.cursor=0;
+      session.dirty=[];session.dirtySet.clear();discover(rootNode);
     }
-    // Values are lower bounds: unexpanded states contribute zero. A positive
-    // value therefore requires an actually discovered route to a cleared board.
-    // Each apple increases body length + pending growth by exactly one, so
-    // positive-reward cycles are impossible. Propagated score values are
-    // lower bounds on additional apples, including every random spawn outcome.
-    // Equal-value actions prefer progress toward food over tail-following loops.
+    // Keep frontier and incremental traversal across repeated calls. Re-root
+    // only when the real state changes, and discover cached descendants in
+    // bounded batches rather than rewalking the entire graph every call.
+    drain(8);
+    const expansionLimit=b.endgameExpansionLimit??Infinity;
+    while(performance.now()<deadline&&(scoring||rootNode.value<1-1e-9)){
+      let worked=false;
+      if(session.cursor<session.discovery.length){
+        const n=session.discovery[session.cursor++];
+        for(const action of n.actions)for(const outcome of action.outcomes)discover(outcome.child);
+        worked=true;
+      }
+      if(session.heap.length&&expanded<expansionLimit){
+        const n=pop();if(!expand(n)){push(n);break;}worked=true;
+      }
+      if(session.dirty.length){drain(16);worked=true;}
+      if(!worked||expanded>=expansionLimit)break;
+    }
+    drain(32);
+    endLastStats={expanded,created,reused,discovered,backups,cacheSize:graph.size,
+      frontier:session.heap.length,pendingDiscovery:session.discovery.length-session.cursor,
+      pendingBackups:session.dirty.length,saturated:session.saturated,recovered,sameRoot,
+      winLowerBound:rootNode.value,additionalApples:rootNode.scoreValue};
+    // Unknown states have zero lower bounds. Eating increases body length +
+    // pending growth, preventing positive-reward cycles. Score ties prefer
+    // progress to food instead of indefinite zero-food survival.
     if(scoring)return rootNode.scoreValue>0&&rootNode.bestScore!==null?
-      {next:point(rootNode.bestScore),additionalApples:rootNode.scoreValue,objective:'score',nodes:expanded,created}:null;
-    return rootNode.value>0&&rootNode.best!==null?{next:point(rootNode.best),value:rootNode.value,nodes:expanded,created}:null;
+      {next:point(rootNode.bestScore),additionalApples:rootNode.scoreValue,objective:'score',nodes:expanded,created,search:endLastStats}:null;
+    return rootNode.value>0&&rootNode.best!==null?
+      {next:point(rootNode.best),value:rootNode.value,nodes:expanded,created,search:endLastStats}:null;
   }
   function plan(b){
-    const started=performance.now(),deadline=started+(b.budgetMs??14),N=b.width*b.height;
+    const started=performance.now(),budget=b.budgetMs??14,deadline=started+budget,N=b.width*b.height;
     const impossible=unwinnable(b);
     const scoring=!!impossible;
-    const ending=scoring?null:finish(b,started+(b.budgetMs??14)*.55);
+    const ending=scoring?null:finish(b,started+budget*.25);
     if(ending?.route.length)return {next:ending.route[0],route:ending.route,witness:ending.route,terminal:true,mode:'complete-board finish',nodes:ending.nodes,depth:ending.route.length,reservedGrowth:0,elapsedMs:performance.now()-started};
-    const policy=endgame(b,started+(b.budgetMs??14)*.5,scoring);
-    if(policy)return {next:policy.next,route:[policy.next],witness:[policy.next],endgame:true,objective:scoring?'score':'win',additionalApples:policy.additionalApples,winLowerBound:policy.value,mode:scoring?'maximize apples · endgame policy':'endgame policy search',nodes:policy.nodes,depth:1,reservedGrowth:0,elapsedMs:performance.now()-started};
+    const policy=endgame(b,started+budget*.70,scoring);
+    if(policy)return {next:policy.next,route:[policy.next],witness:[policy.next],endgame:true,search:policy.search,objective:scoring?'score':'win',additionalApples:policy.additionalApples,winLowerBound:policy.value,mode:scoring?'maximize apples · endgame policy':'endgame policy search',nodes:policy.nodes,depth:1,reservedGrowth:0,elapsedMs:performance.now()-started};
     const id=p=>p[1]*b.width+p[0],point=i=>[i%b.width,Math.floor(i/b.width)];
     const adj=Array.from({length:N},(_,i)=>neighbors(point(i),b).map(id));
     const wall=new Uint8Array(N);for(const p of b.walls)wall[id(p)]=1;
@@ -335,9 +385,9 @@
     const fruitSet=new Set(b.apples.map(key));let end=path.findIndex(p=>fruitSet.has(key(p)));
     const route=end>=0?path.slice(0,end+1):path;
     return {next:point(best.first),route,witness:path,objective:scoring?'score':'win',mode:scoring?'maximize apples · moving-body search':best.eaten?'food route with escape search':'tail and space survival',
-      nodes,depth,reservedGrowth:best.reserved,score:best.value,elapsedMs:performance.now()-started};
+      search:endLastStats,nodes,depth,reservedGrowth:best.reserved,score:best.value,elapsedMs:performance.now()-started};
   }
   const choose=b=>plan(b).next;
-  root.SnakePlanner=Object.assign(root.SnakePlanner||{},{plan,choose,step,advance,room,legal,key,same,neighbors,wallAllowed,unwinnable,finish,endgame,reset:()=>{endGraph.clear();endDirty.length=0;},version:'2.1.2'});
+  root.SnakePlanner=Object.assign(root.SnakePlanner||{},{plan,choose,step,advance,room,legal,key,same,neighbors,wallAllowed,unwinnable,finish,endgame,reset:resetSearch,endgameStats:()=>endLastStats&&({...endLastStats}),version:'2.2.1'});
   if(typeof module!=='undefined')module.exports=root.SnakePlanner;
 })(globalThis);

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Snake Walls Bot",
-  "version": "2.1.2",
+  "version": "2.2.1",
   "description": "Exact-state route planning synchronized to Google Snake’s movement steps.",
   "permissions": ["activeTab", "scripting"],
   "action": {"default_title": "Show Snake bot"},

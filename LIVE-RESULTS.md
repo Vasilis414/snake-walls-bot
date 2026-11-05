@@ -8,6 +8,14 @@ The synchronized turn adapter remains unchanged. Its contract tests check origin
 
 An earlier eight-seed approximate simulation comparison averaged 58.875 apples without a growth margin versus 61.75 with it. That comparison predates the final endgame and scoring revisions and does not establish their win rate. The bundled five-seed smoke simulation also uses approximate wall placement; it checks legality rather than reproducing all Google randomness.
 
-## 2.1.2 compatibility update
+## 2.2.0 experiment
 
-This update retains the 2.1.1 strategy and maps the renamed fields in the Google build inspected on 5 November. Legacy/current adapter regression checks pass. The same adapter was exercised live in the 2.2.1 experiment, which completed attempts at 55 and 61 apples. Those results are not measurements of the baseline strategy; the owner-reported repeated 69s were with 2.1.1 before Google's update.
+The user subsequently reported repeated 69-apple runs with the 2.1.1 baseline. The baseline is preserved as the GitHub v2.1.1 release. Version 2.2.0 changes search budget allocation, saturated-cache recovery, and incremental frontier work. The synchronized engine adapter is byte-for-byte unchanged. Targeted tests and live trial results must be distinguished from evidence of a higher win rate.
+
+First 2.2.0 live trial: small 10×9 board, Walls, many apples, fast speed (89.10 ms engine interval). It collected 66 apples over 177 steps, then had no legal move after switching to score maximization. Diagnostics recorded 14 endgame policy decisions, a maximum cache size of 2,043 states, no capacity rebuild in that attempt, and a maximum planner time of 14.1 ms. No engine/body mismatch was reported. This single result does not demonstrate improvement over the user's repeated 69-apple baseline runs.
+
+## 2.2.1 Google compatibility — 5 November 2026
+
+Google's current build renamed the controller's snake, fruit, walls, growth, interval, score and lifecycle fields. The adapter now supports both inspected layouts; the fresh-board check uses normalized state. The strategy and original tick wrapper remain unchanged. All targeted checks and five seeded legality smoke simulations pass. New tests cover current/legacy controller discovery, state mapping, normal turns, restoration, inactive/poisoned fruit, and pause-versus-win flags.
+
+Live diagnostics from the current Google build recorded completed attempts at 55 apples (292 steps) and 61 apples (250 steps), including an automatic retry. A third attempt was safely interrupted at 58 apples after an intervening direction change between ticks caused the normal turn method to queue a different turn. The guard was retained. These runs verify compatibility, not an improved win rate.

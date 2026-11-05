@@ -1,10 +1,18 @@
-# Snake Bot 2.1.2 — compatible baseline
+# Snake Bot 2.2.1 — endgame search experiment
 
 This update keeps the working engine-synchronized turning mechanism. The changes are in route selection, escape planning, and strategy-related route caching.
 
-## Google compatibility — 5 November 2026
+## Google compatibility update — 5 November 2026
 
-Version 2.1.2 retains the v2.1.1 strategy and adds support for the Google engine layout inspected on 5 November. The original v2.1.1 release remains an archival reference; it cannot read the renamed fields in the current game. The adapter and fresh-board check now support both verified layouts. The normal turn method and original tick wrapper remain unchanged. The separate 2.2.1 experiment also includes this compatibility fix.
+Version 2.2.1 supports both verified Google engine layouts. The newer build renamed the snake, fruit, wall, pending-growth, score, interval, pause and win fields. The adapter now selects a complete verified layout and the fresh-board check uses normalized state. The tick wrapper, normal turn method and strategy are unchanged. The old generic “click Play first” error also explains that an already-visible board can indicate an unsupported build.
+
+## Baseline and experiment
+
+The original baseline is preserved as tag/release `v2.1.1`. Version `v2.1.2` on `main` retains that strategy and adds compatibility with the current Google build. This experiment is developed on `experiment/endgame-search`. The user reports repeated 69-apple baseline runs; their final states have not been analyzed.
+
+Version 2.2.0 keeps the 14 ms planning budget and the exact same turn/tick adapter. Deterministic finishing receives the first 25% of the budget; probabilistic endgame search can run until 70%, leaving the rest for the beam fallback. Search frontiers persist for unchanged states, cached descendants are discovered incrementally after re-rooting, and backup queues deduplicate pending work and share time with expansion. A saturated cache rebuilds from the actual current board. Partial expansions never commit missing chance outcomes. The panel and diagnostics expose expansions, cache size, frontier size, and cache rebuilds.
+
+These changes repair search allocation and recovery; they have not established a higher live win rate.
 
 ## What the strategy does
 
@@ -45,7 +53,7 @@ The adapter supports the Google Snake layouts inspected on 2026-11-03 and 2026-1
 
 ## Verification
 
-Run `node test.cjs`; no installation is required. `node test.cjs --unit` runs the targeted regression/contract checks without the longer simulation suite. Tests cover collision rules, delayed growth, pending-growth tail overlap, closed fruit pockets, route/witness legality, a detour around a recorded live trap, dense moving-body continuations, forced endgame respawns, a forced wall at the vacated tail, both outcomes of a two-position fruit respawn, an unwinnable board played to its nine-apple mathematical maximum, final meals without an escape, tick-wrapper order/restoration, error handling, and pause-versus-win detection. Five seeded simulations check selected moves as fruit and walls change.
+Run `node test.cjs`; no installation is required. `node test.cjs --unit` runs the targeted regression/contract checks without the longer simulation suite. Tests cover collision rules, delayed growth, pending-growth tail overlap, closed fruit pockets, route/witness legality, a detour around a recorded live trap, dense moving-body continuations, forced endgame respawns, a forced wall at the vacated tail, both outcomes of a two-position fruit respawn, an unwinnable board played to its nine-apple mathematical maximum, final meals without an escape, tick-wrapper order/restoration, error handling, and pause-versus-win detection. Additional tests exercise deadline exhaustion between search phases, persistent frontier advancement, low-capacity cache recovery, and policy reuse after an actual state transition. Five seeded simulations check selected moves as fruit and walls change.
 
 `LIVE-RESULTS.md` separates actual game results from the approximate simulation comparison. No simulated score should be read as a Google Snake win rate.
 
