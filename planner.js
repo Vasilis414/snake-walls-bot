@@ -338,6 +338,6 @@
       nodes,depth,reservedGrowth:best.reserved,score:best.value,elapsedMs:performance.now()-started};
   }
   const choose=b=>plan(b).next;
-  root.SnakePlanner=Object.assign(root.SnakePlanner||{},{plan,choose,step,advance,room,legal,key,same,neighbors,wallAllowed,unwinnable,finish,endgame,reset:()=>{endGraph.clear();endDirty.length=0;},version:'2.1.1'});
+  root.SnakePlanner=Object.assign(root.SnakePlanner||{},{plan,choose,step,advance,room,legal,key,same,neighbors,wallAllowed,unwinnable,finish,endgame,reset:()=>{endGraph.clear();endDirty.length=0;},version:'2.1.2'});
   if(typeof module!=='undefined')module.exports=root.SnakePlanner;
 })(globalThis);

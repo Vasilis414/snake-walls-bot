@@ -7,3 +7,7 @@ The final score-maximization change has targeted regression coverage. A complete
 The synchronized turn adapter remains unchanged. Its contract tests check original-step order, exactly one original step, restoration, and exception handling. Strategy tests cover the actual delayed-growth and tail collision rules.
 
 An earlier eight-seed approximate simulation comparison averaged 58.875 apples without a growth margin versus 61.75 with it. That comparison predates the final endgame and scoring revisions and does not establish their win rate. The bundled five-seed smoke simulation also uses approximate wall placement; it checks legality rather than reproducing all Google randomness.
+
+## 2.1.2 compatibility update
+
+This update retains the 2.1.1 strategy and maps the renamed fields in the Google build inspected on 5 November. Legacy/current adapter regression checks pass. The same adapter was exercised live in the 2.2.1 experiment, which completed attempts at 55 and 61 apples. Those results are not measurements of the baseline strategy; the owner-reported repeated 69s were with 2.1.1 before Google's update.

@@ -1,6 +1,10 @@
-# Snake Bot 2.1 — strategy update
+# Snake Bot 2.1.2 — compatible baseline
 
 This update keeps the working engine-synchronized turning mechanism. The changes are in route selection, escape planning, and strategy-related route caching.
+
+## Google compatibility — 5 November 2026
+
+Version 2.1.2 retains the v2.1.1 strategy and adds support for the Google engine layout inspected on 5 November. The original v2.1.1 release remains an archival reference; it cannot read the renamed fields in the current game. The adapter and fresh-board check now support both verified layouts. The normal turn method and original tick wrapper remain unchanged. The separate 2.2.1 experiment also includes this compatibility fix.
 
 ## What the strategy does
 
@@ -37,7 +41,7 @@ The bot submits turns immediately before Google's original movement step. The or
 
 The extension retains `activeTab` and `scripting` permissions, activates only when its icon is clicked on a supported Google URL, and uses bundled scripts in the page's MAIN execution world. It makes no network requests, adds no debugger permissions, and stores no telemetry.
 
-The adapter matches the Google Snake version inspected on 2026-11-03. A future Google update can require an adapter change. Unknown engine structures stop rather than fall back to a guessed clock.
+The adapter supports the Google Snake layouts inspected on 2026-11-03 and 2026-11-05. A future Google update can require an adapter change. Unknown engine structures stop rather than fall back to a guessed clock.
 
 ## Verification
 

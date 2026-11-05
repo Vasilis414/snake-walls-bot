@@ -160,6 +160,45 @@ detach=E.attach(game,()=>{throw Error('planner failed again');},()=>assert.fail(
 assert.equal(game.tick(),42,'even a failing error handler must not swallow the original tick');assert.equal(calls,3);
 E.turn(game,[4,4]);assert.equal(game.oa.direction,'RIGHT');
 assert.throws(()=>E.turn(game,[8,8]),/non-adjacent/);
+// Google's November 5 build renamed state fields while preserving the normal
+// tick/turn methods. Keep the real board model and lifecycle flags equivalent.
+class CurrentGame{
+  constructor(){
+    this.Yc={ka:[{x:3,y:4},{x:2,y:4},{x:1,y:4},{x:0,y:4}],Ra:1,Ua:[1,1,1,1],direction:'NONE'};
+    this.oa={ka:[{pos:{x:7,y:4},yh:true,Vea:false},{pos:{x:5,y:2},yh:false},{pos:{x:5,y:6},yh:true,Vea:true}]};
+    this.Tw={wa:new Map([[1,{pos:{x:0,y:0}}]])};this.Ba={ka:[]};
+    this.ka={oa:{width:10,height:9}};this.Ya=89.1;this.rb=-1;
+    this.yj=false;this.Ua=false;this.kc=false;this.Ci=0;this.ticks=0;
+    this.settings={yb:1,ka:3,La:false};this.calls=0;
+  }
+  tick(){this.calls++;return 43;}
+  turn(d){this.Yc.direction=d;}
+}
+const current=new CurrentGame();assert(E.matches(current));
+const currentSnapshot=E.snapshot(current);
+assert.equal(currentSnapshot.engineLayout,'2026-11-05');
+assert.equal(currentSnapshot.idle,true);
+assert.equal(currentSnapshot.growth,1,'growth uses Ra, not the renamed per-segment Ua array');
+assert.equal(currentSnapshot.tickMs,89.1,'interval uses Ya, not rb animation state');
+assert.equal(currentSnapshot.body[0][0],3);
+assert.equal(currentSnapshot.apples.length,1,'exclude inactive and poisonous fruit using current fields');
+assert.equal(currentSnapshot.walls.length,1);
+assert.equal(currentSnapshot.mode,1);assert.equal(currentSnapshot.countMode,3);
+current.Ci=17;assert.equal(E.snapshot(current).score,17);
+sandbox.document.querySelectorAll=()=>[{__jscontroller:{nested:{ub:current}}}];
+assert.equal(E.find(),current,'discover the current engine through its attached controller');
+E.turn(current,[3,3]);assert.equal(current.Yc.direction,'UP');
+assert.equal(E.snapshot(current).idle,false);
+const currentEvents=[];
+detach=E.attach(current,()=>currentEvents.push('before'),()=>currentEvents.push('after'),()=>assert.fail('unexpected current engine error'));
+assert.equal(current.tick(),43);assert.equal(current.calls,1);assert.deepEqual(currentEvents,['before','after']);detach();
+assert(!Object.hasOwn(current,'tick'));
+current.yj=true;current.Ua=true;current.kc=true;
+assert.equal(E.snapshot(current).paused,true);assert.equal(E.snapshot(current).won,false);
+current.oa.ka=[];assert.equal(E.snapshot(current).won,false,'paused empty-fruit state is never a win');
+current.kc=false;assert.equal(E.snapshot(current).won,true);
+current.Ua=false;assert.equal(E.snapshot(current).won,false,'a loss is not a win');
+assert.equal(E.matches({...current,Yc:{ka:[]}}),false,'reject an incomplete new engine shape');
 
 function simulate(seed){
   let rng=seed>>>0;const rand=()=>{rng=(Math.imul(rng,1664525)+1013904223)>>>0;return rng/4294967296;};
